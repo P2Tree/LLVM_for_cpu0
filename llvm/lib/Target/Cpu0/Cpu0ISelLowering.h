@@ -68,7 +68,7 @@ enum NodeType {
 //===----------------------------------------------------------------------===//
 // TargetLowering Implementation
 //===----------------------------------------------------------------------===//
-class Cpu0FunctionInfo;
+class Cpu0MachineFunctionInfo;
 class Cpu0Subtarget;
 
 class Cpu0TargetLowering : public TargetLowering {

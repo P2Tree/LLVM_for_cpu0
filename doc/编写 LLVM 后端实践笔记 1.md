@@ -1,4 +1,4 @@
-# 编写 LLVM 后端实践笔记
+# LLVM 后端实践笔记
 
 
 ## 1 新后端初始化和软件编译
@@ -302,13 +302,13 @@ cmake 时可能会出问题，导致失败，只要你最后没看到 configurin
 进入到 build 路径下，输入：
 
 ```bash
-cmake -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Debug -G "Ninja" ../llvm
+$ cmake -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Debug -G "Ninja" ../llvm
 ```
 
 一切正常后，输入：
 
 ```bash
-ninja
+$ ninja
 ```
 
 看看会出什么错误，很可能会出问题，并且暴露信息也会很清晰，检查我们的代码并做修改，直到全部正确编译。
@@ -316,7 +316,7 @@ ninja
 找到我们的 llc，它通常在编译好的目录的 bin 路径下，输入:
 
 ```bash
-build/bin/llc --version
+$ build/bin/llc --version
 ```
 
 如果正常的话，会输出 llc 的各种信息，其中包括它支持的后端名称，其中就可以找到我们的后端 cpu0、cpu0el。这里的 cpu0 的 c 是小写，这是因为我们 Cpu0/TargetInfo/Cpu0TargetInfo.cpp 中注册目标平台时的一个参数，指定了输出的名称，是小写的 cpu0、cpu0el。
@@ -324,7 +324,7 @@ build/bin/llc --version
 之后，我们就可以只针对我们的后端平台做编译了，编译会更快一些，比如 cmake 命令参数可改为：
 
 ```bash
-cmake -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Debug -DLLVM_TARGETS_TO_BUILD=Cpu0 -G "Ninja" ../llvm
+$ cmake -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Debug -DLLVM_TARGETS_TO_BUILD=Cpu0 -G "Ninja" ../llvm
 ```
 
 在 build/lib/Target/Cpu0/ 路径下，你会发现很多 .inc 文件，这些文件就是由我们的 .td 文件生成的 C++ 代码。
@@ -343,7 +343,7 @@ int main() {
 我们的 clang 用着标准的那一套，所以不用操心它，不过我们的 cpu0 后端没有自己的 ABI，于是使用了 Mips 的 ABI，输入：
 
 ```bash
-build/bin/clang -target mips-unknown-linux-gnu -c ch1.c -emit-llvm -o ch1.bc
+$ build/bin/clang -target mips-unknown-linux-gnu -c ch1.c -emit-llvm -o ch1.bc
 ```
 
 -emit-llvm 参数指示 clang 在 LLVM IR 的地方停下来，输出 IR。执行之后会生成一个 ch1.bc，这是 LLVM IR 的位码文件。
@@ -351,7 +351,7 @@ build/bin/clang -target mips-unknown-linux-gnu -c ch1.c -emit-llvm -o ch1.bc
 输入：
 
 ```bash
-build/bin/llvm-dis ch1.bc -o -
+$ build/bin/llvm-dis ch1.bc -o -
 ```
 
 llvm-dis 是 LLVM IR 的反汇编器，它将位码文件反汇编成可读的 LLVM 汇编，因为指定 -o -，它将结果直接输出在终端。检查 LLVM 汇编，并与我们的源程序作对比。
@@ -359,7 +359,7 @@ llvm-dis 是 LLVM IR 的反汇编器，它将位码文件反汇编成可读的 L
 输入：
 
 ```bash
-build/bin/llc -march=cpu0 -relocation-model=pic -filetype=asm ch1.bc -o ch1.s
+$ build/bin/llc -march=cpu0 -relocation-model=pic -filetype=asm ch1.bc -o ch1.s
 ```
 
 这里报错了，提示：
