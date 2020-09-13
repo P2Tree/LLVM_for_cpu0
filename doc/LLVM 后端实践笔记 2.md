@@ -230,3 +230,82 @@ llc: target does not support generation of this file type!
 ```
 
 这样的话，这部分就结束了。我们实现了较为靠后的一些功能，但其实在前边的功能还不完整。
+
+
+
+### 2.3 增加 DAGToDAGISel
+
+AsmPrinter 支持之后，已经可以将 Machine DAG 转成 asm 了，但我们现在还缺少将 LLVM IR DAG 转换成 Machine DAG 的功能，也就是指令选择的部分功能，在 LLVM 机器无关的目标代码生成中，执行选择占据了非常重要的地位。
+
+指令选择的目的就是，把 DAG 中所有的 Node 都转换成目标相关的 Node，虽然在 Lowering LLVM IR 到 DAG 时，我们已经将部分 Node 转换了，但并不是所有，经过这个 pass 之后，所有的 Node 就都是目标机器支持的操作了。
+
+但实际上需要我们做的工作并不是指令选择的功能，这些功能已经被 LLVM 实现了（感兴趣可以看看 `lib/CodeGen/SelectionDAG/SelectionDAGISel.cpp` 中的实现），我们只需要继承已有实现，并将我们的指令系统支持进去（通过 tablegen）即可。这也便是 LLVM 模块化设计下的优势。
+
+先来看看本节新增的文件：
+
+#### 2.3.1 文件新增
+
+##### (1) Cpu0ISelDAGToDAG.h/.cpp
+
+这两个文件定义了 Cpu0DAGToDAGISel 类，继承自 SelectionDAGISel 类，并包含有一些全局化的接口，比如 Select 是指令选择的入口，其中会调用 trySelect 方法，后者是提供给子类的自定义部分指令选择方式的入口，可以先不管。在 Select 函数前边部分都没有选择成功的指令，会最后到 SelectCode 函数，这个函数是由 tablegen 依据 td 文件生成的 Cpu0GenDAGISel.inc 文件中定义的。
+
+虽然 LLVM 的最终目标是让所有和平台相关的信息全部用 td 文件来描述，但目前还没有完全做到（毕竟不同的硬件差异还是挺大的，有些如 X86 的硬件设计还很复杂），所以这些无法用 td 描述的指令选择操作就可以放在这部分 cpp 代码中完成。
+
+还有个 SelectAddr 函数，顾名思义是做关于地址模式的执行选择的，我们知道 IR DAG 中有些 Node 是地址操作数，这些 Node 可以很复杂，目前 Cpu0 把这块代码提出来特殊对待了。我们打开 Cpu0InstrInfo.td 中对 addr 记录的描述，就可以发现，之前已经在这里注册了一个处理函数名称，就叫 SelectAddr，实际上在 tablegen 指令选择时，也会对经由 addr 记录来描述的那些记录（显然会是一些地址 pattern），交给 SelectAddr 函数来处理。
+
+getImm 函数是将一个指定的立即数切入到一个目标支持的 Node 中。
+
+##### (2) Cpu0SEISelDAGToDAG.h/.cpp
+
+这两个文件定义了 Cpu0SEDAGToDAGISel 类，继承自 Cpu0DAGToDAGISel 类，这种双层设计，我们在前边已经描述过了。在这个底层的 SE 类中，实现了 trySelect 类，这个类目前还没有实现什么实质性的内容。目的就是将来留着处理 tablegen 无法自动处理的那些指令的指令选择。
+
+另外还实现了 createCpu0SEISelDAG 函数，用来做 Target 注册。
+
+
+
+#### 2.3.2 文件修改
+
+##### (1) Cpu0TargetMachine.cpp
+
+注册一个指令选择器。目前是将 Cpu0SEISelDAG 添加进来。addInstSelector 方法重写了父类 TargetPassConfig 的方法。
+
+##### (2) CMakeLists.txt
+
+因为新增了文件，所以修改这个文件保证编译顺利。
+
+
+
+#### 2.3.3 简要说明
+
+目前我们的目标是把整个后端打通，所以没有操刀 td 文件，我们的 td 文件现在还很简单，但足够去跑我们那个很简单的 testcase 了，将来添加其他指令也会是很顺利的事情。
+
+将来随着支持的指令越来越多，尤其是一些复杂指令的支持，cpp 代码中 trySelect 会增加一些手动处理的指令选择代码，这是目前无法避免的问题。
+
+#### 2.2.4 编译测试
+
+```shell
+$ ninja clean
+$ cmake -G Ninja -DLLVM_TARGETS_TO_BUILD=Cpu0 -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang ../llvm
+$ ninja
+```
+
+实际上不去手动 `ninja clean`，也可以编译，ninja 会自动检查 CMakeLists 是否被修改了，如果修改则重新编译。
+
+#### 2.2.5 检验成果
+
+输入：
+
+```shell
+$ build/bin/llc -march=cpu0 -relocation-model=pic -filetype=asm ch2.bc -o ch2.cpu0.s
+```
+
+你会收到一个新的错误：
+
+```bash
+LLVM ERROR: Cannot select: t6: ch = Cpu0ISD::Ret t4, Register:i32 $lr
+  t5: i32 = Register $lr
+In function: main
+```
+
+Ret 指令选择卡住了。我们在之前的 Cpu0ISelLowering.cpp 中已经设计了 Cpu0ISD::Ret 节点，但现在还没有完整实现对它的处理。
+
