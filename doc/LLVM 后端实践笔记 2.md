@@ -1,4 +1,4 @@
-# LLVM 后端实践笔记
+# LLVM 后端实践笔记 2
 
 [TOC]
 
@@ -307,5 +307,104 @@ LLVM ERROR: Cannot select: t6: ch = Cpu0ISD::Ret t4, Register:i32 $lr
 In function: main
 ```
 
-Ret 指令选择卡住了。我们在之前的 Cpu0ISelLowering.cpp 中已经设计了 Cpu0ISD::Ret 节点，但现在还没有完整实现对它的处理。
+Ret 指令选择卡住了。我们在之前的 Cpu0ISelLowering.cpp 中已经设计了 Cpu0ISD::Ret 节点，在 ISelLowering 中也留下了 LowerReturn 的实现函数，但现在还没有完整实现对它的处理。
 
+
+
+### 2.4 处理返回寄存器 $lr
+
+Mips 后端通过 `jr $ra` 来返回到调用者，`$ra` 是一个特殊寄存器，它用来保存调用者（caller）的调用之后的下一条指令的地址，返回值会放到 `$2` 中。如果我们不对返回值做特殊处理，LLVM 会使用任意一个寄存器来存放返回值，这便与 Mips 的调用惯例不符。而且，LLVM 会为 `jr` 指令分配任意一个寄存器来存放返回地址。Mips 允许程序员使用其他寄存器代替 `$ra`，比如 `jr $1`，这样可以实现更加灵活的编程方式，节省时间。
+
+#### 2.4.1 文件新增
+
+无。
+
+#### 2.4.2 文件修改
+
+##### (1) Cpu0CallingConv.td
+
+新增有关于返回的调用约定，增加`RetCC_Cpu0` ，指定将 32 位整形返回值放到 V0、V1、A0、A1 这几个寄存器中。
+
+##### (2) Cpu0InstrFormats.td
+
+新增 `Cpu0Pseudo` 的 Pattern，下边会用到。
+
+##### (3) Cpu0InstrInfo.td
+
+利用刚才的伪指令 Pattern，定义新的 record，`RetLR`，它指定的 SDNode 是 `Cpu0Ret`，后者是我们之前定义好的。
+
+##### (4) Cpu0ISelLowering.h/.cpp
+
+我们新增了一些调用约定的分析函数，关键函数是 analyzeReturn()。该函数中利用了前边调用约定中定义的 `RetCC_Cpu0` 来分析返回值类型、值等信息，阻断不合法的情况。
+
+其次，很重要的一个函数就是 `LowerReturn()`，该函数在早期将 ISD 的 ret 下降成 Cpu0ISD::Ret 节点。我们之前的实现是一句很简单的做法，也就是会忽略返回时的特殊约定，现在重新设计了这块的逻辑，也就是总生成 `ret $lr` 指令。
+
+##### (5) Cpu0MachineFunctionInfo.h
+
+增加了几个和返回寄存器、参数相关的辅助函数。
+
+##### (6) Cpu0SEInstrInfo.h/.cpp
+
+增加伪指令展开部分的内容，也就是展开返回指令，选择 `$lr` 寄存器作为返回地址寄存器，选择 `Cpu0::RET` 作为指令。
+
+#### 2.4.3 简要说明
+
+这一部分，我们处理了函数调用时返回的操作，主要就是对针对 Cpu0 的特殊调用约定下的返回指令做约束，比如返回地址使用 `$lr` 来存储，返回值保存在特殊的寄存器中。
+
+函数 LowerReturn 正确处理了 return 的情况，上一节结尾的错误就是因此而来。函数创建了 `Cpu0ISD::Ret` 节点，并且里边包含了 `%V0` 寄存器的相关关系，这个寄存器保存了返回值，如果不这样做，在 Lower Ret 时，使用 `$lr` 寄存器，所以看起来 `%V0` 寄存器没有用了，进而后边的优化阶段会把这个 CopyToReg 的 Node 给删掉，结果就导致了错误。
+
+#### 2.4.4 检验成果
+
+正常编译工程，不再赘述。
+编译之后，进行测试：
+
+```shell
+build/bin/clang -target mips-unknown-linux-gnu -c ch2.cpp -emit-llvm -o ch2.bc
+```
+我们看一下 LLVM IR：
+```shell
+build/bin/llvm-dis ch2.bc -o -
+```
+输出的结果：
+```shell
+define i32 @main() #0 {
+  %1 = alloca i32, align 4
+  store i32 0, i32* %1
+  ret i32 0
+}
+```
+生成的指令中有一条 store 指令，这条指令会将局部变量 0 放到栈中，但是我们目前还没有解决栈帧的管理问题，所以如果把这个代码传给后端，会卡在这里（通过 Ctrl-C 退出）。我们可以通过 O2 来编译，O2 会把局部变量放到寄存器中，避免生成 store 指令，从而可以先验证我们 ret 的功能。
+```shell
+build/bin/clang -O2 -target mips-unknown-linux-gnu -c ch2.cpp -emit-llvm -o ch2.bc
+```
+看一下 LLVM IR：
+```shell
+define i32 @main() #0 {
+  ret i32 0
+}
+```
+显然，我们能够输出正确的值了。
+```shell
+build/bin/llc -march=cpu0 -relocation-model=pic -filetype=asm ch2.bc -o -
+```
+生成的内容直接输出到终端，能看到，已经正常生成了 `ret $lr` 指令。也能看到返回值 0 通过 `addiu $2, $zero, 0` 这条指令放到了寄存器 `$2` 中，`$2` 就是 `%V0`，我们在 Cpu0RegisterInfo.td 中做过定义。
+通过指定 `-print-before-all` 和 `-print-after-all` 参数到 llc，可以打印出 DAG 指令选择前后的状态：
+```shell
+build/bin/llc -march=cpu0 -relocation-model=pic -filetype=asm -print-before-all -print-after-all ch2.bc -o -
+```
+其中显示，分别将 `Cpu0ISD::Ret t3, Register::i32 %V0, t3:1` 指令选择到 `RetLR Register:i32 %V0, t3, t3:1`，将 `t1: i32 = Constant<0>` 指令选择到 `t1: i32 = ADDiu Register:i32 %ZERO, TargetConstant:i32<0>`。注意到，RetLR 后续还会做伪指令展开为 `ret $lr`，并隐式使用了 `%V0`（寄存器分配之后，就不用担心 `%V0` 被删掉了，所以可以改成隐式依赖了）。
+
+两条指令从 LLVM IR 到汇编的路径是：
+
+| LLVM IR     | Lower        | ISel              | RVR（重写虚拟寄存器） | Post-RA （寄存器分配之后） | Asm   |
+| ----------- | ------------ | ----------------- | --------------------- | -------------------------- | ----- |
+| constant  0 | constant 0   | ADDiu             | ADDiu                 | ADDiu                      | addiu |
+| ret         | Cpu0ISD::Ret | CopyToReg + RetLR | RetLR                 | RET                        | ret   |
+
+之所以做 CopyToReg 的原因是，ret 指令不能接受一个立即数作为操作数。它通过在 Cpu0InstrInfo.td 中的定义来完成：
+
+```python
+def : Pat<i32 immSExt16:$in), (ADDiu ZERO, imm:$in)>;
+```
+
+接下来就来处理一下稍微比较复杂的栈帧的管理问题。
