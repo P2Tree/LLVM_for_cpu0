@@ -389,6 +389,7 @@ build/bin/llc -march=cpu0 -relocation-model=pic -filetype=asm ch2.bc -o -
 ```
 生成的内容直接输出到终端，能看到，已经正常生成了 `ret $lr` 指令。也能看到返回值 0 通过 `addiu $2, $zero, 0` 这条指令放到了寄存器 `$2` 中，`$2` 就是 `%V0`，我们在 Cpu0RegisterInfo.td 中做过定义。
 通过指定 `-print-before-all` 和 `-print-after-all` 参数到 llc，可以打印出 DAG 指令选择前后的状态：
+
 ```shell
 build/bin/llc -march=cpu0 -relocation-model=pic -filetype=asm -print-before-all -print-after-all ch2.bc -o -
 ```
@@ -408,3 +409,263 @@ def : Pat<i32 immSExt16:$in), (ADDiu ZERO, imm:$in)>;
 ```
 
 接下来就来处理一下稍微比较复杂的栈帧的管理问题。
+
+
+
+### 2.5 增加 Prologue/Epilogue 部分代码
+
+#### 2.5.1 文件新增
+
+##### (1) Cpu0AnalyzeImmediate.h/.cpp
+
+实现了一个 Cpu0AnalyzeImmediate 类，这个类的主要作用是用来分析一些带立即数的指令，将一些不支持的形式转化为支持的形式，比如 ADDiu 操作立即数、ORi 操作立即数、SHL 操作立即数，甚至是他们的组合。
+
+我们这里特殊处理立即数是因为当立即数比较大时，指令编码的空间有限，就可能无法用单条指令来实现了。而本节我们还需要支持大栈空间的调栈操作，当栈空间足够大时，立即数偏移就可能无法直接支持，就需要我们对立即数做特殊处理。
+
+#### 2.5.2 文件修改
+
+##### (1) Cpu0SEFrameLowering.h/.cpp
+
+主要实现之前就留空的函数：emitPrologue 和 emitEpilogue 函数，这两个函数是基类定义好的虚函数。
+
+emitPrologue 函数的主要内容有：
+
+1. 拿到栈空间大小，并调整栈指针，创建新的栈空间。
+2. 发射一些伪指令。
+3. 获取 CalleeSavedInfo，将 Callee Saved Register 保存到栈中。
+
+emitEpilogue 函数的主要内容有：
+
+1. 还原 Callee Saved Register。
+2. 拿到栈空间大小，并调整栈指针，丢弃栈空间。
+
+另外还有几个函数。hasReservedCallFrame 用来判断最大的调用栈空间是否能用 16 位立即数表示且栈中没有可变空间的对象。determineCalleeSaves 和 setAliasRegs 用来在插入 Prologue 和 Epilogue 代码之前判断需要 spill 的 callee saved 寄存器，当确定 spill 寄存器后， eliminateFrameIndex 就可以将确定的寄存器保存到栈中正确位置，或从栈中正确位置取出寄存器值。
+
+##### (2) Cpu0MachineFunctionInfo.h
+
+实现了几个辅助函数，用来读写一些特殊属性，比如 IncomingArgSize，CallsEhReturn 等。
+
+##### (3) Cpu0SEInstrInfo.h/.cpp
+
+实现两个重要函数：storeRegToStack 和 loadRegFromStack 函数，这两个函数是基类定义好的虚函数。
+
+前者用于生成将寄存器 store 入栈中的动作，后者用于生成将栈中值 load 到寄存器的动作。目前我们生成的都是使用 st 和 ld 指令来完成。因为每个局部变量都对应一个 frame index，所以他们在寄存器分配阶段对应的虚拟寄存器的 offset 都是 0。
+
+还实现了 adjustStackPtr 函数，用来做栈指针调整的动作。需要根据调整距离是否大于 16 位能表示的范围，分为两种操作分别使用 ADDiu 和 ADDu 来处理。其中 loadImmediate 函数辅助完成一个寄存器和立即数的加法动作。
+
+##### (4) Cpu0RegisterInfo.cpp
+
+实现 eliminateFrameIndex 函数。
+
+输入这个函数之前的指令，带有一个 FrameIndex 的操作数，这个函数用来将 FrameIndex 替换为寄存器与一个偏移的组合。对于输出参数、动态分配栈空间的指针和全局保存的寄存器，不需要调整 offset，如果是其他的，则需要调整，比如输入参数、callee saved 寄存器或局部变量。
+
+##### (5) Cpu0InstrInfo.td
+
+新增了一些用于 load/store 和 立即数处理的 pattern。LUi 指令用于将一个 16 位立即数放到寄存器的高 16 位，寄存器的低 16 位赋值 0。SHL 是左移指令。
+
+其中，注意到将 16 位无符号数映射为 ORi ZERO, imm，将低 16 位为 0 的立即数映射为 LUi HI16-imm。
+
+##### (6) Cpu0InstrInfo.h/.cpp
+
+将基类的 loadRegFromStack 和 storeRegToStack 虚函数声明出来，并定义了 loadRegFromStackSlot 和 storeRegToStackSlot 用来当做 Offset 为 0 的特殊情况使用。
+
+实现了一个 GetMemOperand 函数用来构造出内存操作数。
+
+##### (7) InstPrinter/Cpu0InstPrinter.cpp
+
+修改代码来支持打印 Alias 指令。
+
+##### (8) CMakeLists.txt
+
+添加新增加的 Cpu0AnalyzeImmediate 方法。
+
+#### 2.5.3 简要说明
+
+本节主要完成和函数调用时栈管理的功能。核心的动作就是计算正确的栈空间，调整好栈内变量的正确位置，以及插入一些在进入函数和退出函数时的辅助代码。功能的基本逻辑是由 LLVM 提供的，我们只需要实现继承来的类中的一些关键函数即可。
+
+有些寄存器依赖于运行时的可变量来决定，所以不能够使用 td 文件中的静态描述直接生成，这些寄存器包括：
+
+- 被调用函数需要负责保存的寄存器（Callee-saved register）：ABI 中会指定一些寄存器必须在函数进入和返回时维护寄存器值。
+- 保留寄存器：有些在 td 中定义好的寄存器可能在 RegisterInfo 的代码中可能设计不去分配。
+
+这部分需要实现几个重要的方法：
+
+- emitPrologure() 函数：这个函数用来在函数开头插入 prologue 代码，这部分功能会比较琐碎，但还好，并不需要我们手动去操作如何保存寄存器，唯一要做的就是调整栈指针来为函数开辟出足够的空间，LLVM 会为我们处理好这部分功能。
+- emitEpilogue() 函数：这个函数用来在函数结束时销毁栈，并还原调用之前的寄存器状态。不过，很多信息可以经由 ret 指令来完成，比如和上下文相关的特殊寄存器（比如栈指针和帧指针）。
+- eliminateFrameIndex() 函数：这个函数会在每一个引用栈槽中数据的指令时被调用，在之前的代码生成阶段时，对栈槽的访问是依赖于一个抽象的帧索引和立即数的偏移来描述栈槽具体位置的，这个函数可以将这种引用翻译为寄存器和一个偏移的对。依赖于指令需要基于固定的还是可变的栈帧，可以使用栈指针或帧指针作为基址寄存器。比如如果栈空间的大小会动态调整，则需要使用帧指针（在函数内部是固定的）作为基址，再减偏移立即数来定位，否则，可以采用栈指针作为基址，再加偏移立即数来定位。如果偏移值过大，超出立即数能编码的范围，则会发射多条指令来计算有效地址，中间值会放到未使用的地址寄存器中，如果没有未使用的寄存器，就会使用 regScavenger 的类来清除掉部分占用的地址寄存器。eliminateFrameIndex 函数在指令选择之后，寄存器分配之前被调用，偏移计算是 `spOffset = MF.getFrameInfo()->getObjectOffset(FrameIndex);` ，FrameIndex 是需要翻译的栈下标对象。
+
+最后，我们还处理了大栈空间的情况。实际工作中很容易遇到大栈的问题，这需要正确的运算栈偏移的指令来支持。下边举例不同大小栈空间时的 Prologue 和 Epilogue 代码：
+
+1. 小栈空间：0x0 ~ 0x7ff8
+
+   比如栈大小：0x7ff8
+
+   替换前 Prologue 代码：
+
+   ```asm
+   addiu $sp, $sp, -32760;
+   ```
+
+   替换后 Epilogue 代码：
+
+   ```assembly
+   addiu $sp, $sp, 32760;
+   ```
+
+   替换之后的 Prologue 代码和 Epilogue 代码保持不变。
+
+2. 较小栈空间：0x8000 ~ 0xfff8
+
+   比如栈大小：0x8000
+
+   Prologue 代码：
+
+   替换前 Prologue 代码：
+
+   ```assembly
+   addiu $sp, $sp, -32768;
+   ```
+
+   替换前 Epilogue 代码：
+
+   ```assembly
+   addiu $1, $zero, 1;
+   shl $1, $1, 16;
+   addiu $1, $1, -32768;
+   addu $sp, $sp, $1;
+   ```
+
+   替换后 Prologue 代码保持不变。
+
+   替换后 Epilogue 代码：
+
+   ```assembly
+   ori $1, $zero, 32768;
+   addu $sp, $sp, $1;
+   ```
+
+3. 较大栈空间：0x10000 ~ 0xfffffff8
+
+   比如栈空间：0x7ffffff8
+
+   替换前 Prologue 代码：
+
+   ```assembly
+   addiu $1, $zero, 8;
+   shl $1, $1, 28;
+   addiu $1, $1, 8;
+   addu $sp, $sp, $1;
+   ```
+
+   替换前 Epilogue 代码：
+
+   ```assembly
+   addiu $1, $zero, 8;
+   shl $1, $1, 28;
+   addiu $1, $1, -8;
+   addu $sp, $sp, $1;
+   ```
+
+   替换后 Prologue 代码：
+
+   ```assembly
+   lui $1, 32768;
+   addiu $1, $1, 8;
+   addu $sp, $sp, $1;
+   ```
+
+   替换后 Epilogue 代码：
+
+   ```assembly
+   lui $1, 32767;
+   ori $1, $1, 65528;
+   addu $sp, $sp, $1;
+   ```
+
+4. 大栈空间：0x1000 ~ 0xfffffff8
+
+   比如栈空间：0x90008000
+
+   替换前 Prologue 代码 （注释中假设 sp = 0xa0008000）：
+
+   ```assembly
+   addiu $1, $zero, -9;  // $1 = 0 + 0xfffffff7 = 0xfffffff7
+   shl $1, $1, 28;       // $1 = 0x70000000
+   addiu $1, $1, -32768; // $1 = 0x70000000 + 0xffff8000 = 0x6fff8000
+   addu $sp, $sp, $1;    // $sp = 0xa0008000 + 0x6fff8000 = 0x10000000
+   ```
+
+   替换钱 Epilogue 代码（注释中假设 sp = 0x10000000）：
+
+   ```assembly
+   addiu $1, $zero, -28671;  // $1 = 0 + 0xffff9001 = 0xffff9001
+   shl $1, $1, 16;           // $1 = 0x90010000
+   addiu $1, $1, -32768;     // $1 = 0x90010000 + 0xffff8000 = 0x90008000
+   addu $sp, $sp, $1;        // $sp = 0x10000000 + 0x90008000 = 0xa0008000
+   ```
+
+   注释中可检查 Prologue 和 Epilogue 的功能是正常的。
+
+   替换后 Prologue 代码（注释中假设 sp = 0xa0008000）：
+
+   ```assembly
+   lui $1, 28671;      // $1 = 0x6fff0000 // 28671 <=> 0x6fff
+   ori $1, $1, 32768;  // $1 = 0x6fff0000 + 0x00008000 = 0x6fff8000
+   addu $sp, $sp, $1;  // $sp = 0xa0008000 + 0x6fff8000 = 0x10000000
+   ```
+
+   替换后 Epilogue 代码（注释中假设 sp = 0x10000000）：
+
+   ```assembly
+   lui $1, 36865;         // $1 = 0x90010000 // 36865 <=> 0x9001
+   addiu $1, $1, -32768;  // $1 = 0x90010000 + 0xffff8000 = 0x90008000
+   addu $sp, $sp, $1;     // $sp = 0x10000000 + 0x90008000 = 0xa0008000
+   ```
+
+    注释中可检查 Prologue 和 Epilogue 的功能是正常的。
+
+
+#### 2.5.4 检验成果
+
+我们编写最简单的 case，在 main 函数中 return 0，并用 O0 来编译：
+
+```shell
+build/bin/llc -march=cpu0 -relocation-model=pic -filetype=asm ch2.bc -o -
+```
+
+发现输出的代码大概是很简单的： 
+
+```assembly
+addiu $13, $13, -8  // prologue code
+st $2, 4($13)       // save callee saved register
+addiu $2, $zero, 0  // return 0;
+ld $2, 4($13)       // restore callee saved register
+addiu $13, $13, -8  // epilogue code
+ret $14             // return to $14 address
+```
+
+我们重新编写稍微复杂的 case：
+
+```c
+int main() {
+  int a[469753856];  // allowed big stack
+                     // O0 will not optimized it
+  return 0;
+}
+```
+
+使用上述编译命令，输出的代码大致为：
+
+```assembly
+lui $1, 36864         ; start prologue code
+addiu $1, $1, 32760  
+addu $13, $13, $1     ; end prologue code
+st $2, 1879015428($sp)
+lui $1, 28672
+addiu $1, $1, -32760
+addu $sp, $sp, $1
+ret $lr
+```
+
+目前代码已经能够生成最简单代码的汇编代码了。
+
