@@ -281,7 +281,7 @@ getImm 函数是将一个指定的立即数切入到一个目标支持的 Node �
 
 将来随着支持的指令越来越多，尤其是一些复杂指令的支持，cpp 代码中 trySelect 会增加一些手动处理的指令选择代码，这是目前无法避免的问题。
 
-#### 2.2.4 编译测试
+#### 2.3.4 编译测试
 
 ```shell
 $ ninja clean
@@ -291,7 +291,7 @@ $ ninja
 
 实际上不去手动 `ninja clean`，也可以编译，ninja 会自动检查 CMakeLists 是否被修改了，如果修改则重新编译。
 
-#### 2.2.5 检验成果
+#### 2.3.5 检验成果
 
 输入：
 
@@ -669,3 +669,103 @@ ret $lr
 
 目前代码已经能够生成最简单代码的汇编代码了。
 
+### 2.6 操作数 pattern
+
+在 TableGen 中，除了一些描述指令的 pattern 之外，还有些是描述操作数的。用来描述指令的 pattern 都是 DAG 中的内部节点，而操作数是 DAG 中的叶子节点。
+
+操作数的叶子节点最基本的类是 PatLeaf，因为操作数不会再有其内部的分支，所以我们可以把操作数的节点看做是没有操作数的节点，从 `include/llvm/Target/TargetSelectionDAG.td` 中可以了解到，PatLeaf 的定义是：
+
+```python
+class PatLeaf<dag frag, code pred = [{}], SDNodeXForm xform = NOOP_SDNodeXForm>
+  : PatFrag<(ops), frag, pred, xform>;
+```
+
+可以看到，PatFrag 传入的第一个 dag 模式中，没有操作数（`(ops)` 就表示操作数为空）。
+
+我们现在定义的一些典型的操作数 pattern ，它们用来作为一个 Node 的类型描述：
+
+```python
+def simm16 : Operand<i32> {           // 因为是 32 位机器，所以继承自 Operand<i32>
+  let DecoderMethod = "DecodeSimm16"; // 指定解码函数，将在其他代码中实现
+}
+def uimm16 : Operand<i32> {
+  let PrintMethod = "printUnsignedImm"; // 指定打印格式函数，将在其他代码中实现
+}
+get mem : Operand<iPTR> {
+  let PrintMethod = "printMemOperand";
+  let MIOperandInfo = (ops CPURegs, simm16) // 指定操作数的信息，这里是一个寄存器类和一个立即数
+  let EncoderMethod = "getMemEncoding";  // 指定获取编码的函数，将在其他代码中实现
+}
+```
+
+下边这部分是 Node 转换动作：
+```python
+def LO16 : SDNodeXForm<imm, [{   // 转换函数，获取 imm 低 16 位值
+  return getImm(N, N->getZExtValue() & 0xffff);
+}]
+def HI16 : SDNodeXForm<imm, [{   // 获取 imm 高 16 位值
+  return getImm(N, (N->getZExtValue() >> 16) & 0xffff);
+}]
+```
+
+代码片段会插入到做 Node TransForm 的函数中，N 是不能改为其他名称的，表示 imm 对应的 ConstantSDNode 对象。这个记录可以作为 PatLeaf 的第三那个参数传入，用来在指令选择时做必要的转换。
+
+下边是一些典型的 dag pattern：
+
+```python
+def immSExt16 : PatLeaf<(imm), [{
+  return isInt<16>(N->getSExtValue());  // predicate 限定功能中插入的一段代码
+}]
+def immZExt16 : PatLeaf< ... >;
+```
+
+从 PatLeaf 的定义中可以看出，第二个代码片段，是用来做 predicate 的，实际上用在指令选择时，判断 Node 的 predicate 是否满足。后续几个 Node 也是同理。
+
+下边是复杂 pattern：
+
+```python
+def addr : ComplexPattern<iPTR, 2, "SelectAddr", [frameindex], [SDNPWantParent]>;
+class AlignedLoad<PatFrag Node> :  // 确保 load 操作是对齐的
+  PatFrag<(ops node:$ptr), (Node node:$ptr), [{
+    LoadSDNode *LD = cast<LoadSDNode>(N);
+    return LD->getMemoryVT().getSizeInBits()/8 <= LD->getAlignment();
+  }]>;
+def load_a : AlignedLoad<load>;
+
+def store_a : AlignedStore<store>;  // store 同理，不再展示
+```
+
+这一类是比较复杂的 pattern，ComplexPattern 是内建的一个类，通常这一类都是内存操作数。SelectAddr 字符串对应 Cpu0ISelDAGToDAG.cpp 中的同名函数，而 TableGen 会自动在发现这个 Node 时调用 SelectAddr 来完成进一步的动作。
+
+重点要区分两种不同用途的描述，一种是描述操作数的 pattern 片段，一种是描述 dag pattern。
+
+比如在 addiu 中的继承结构，几个参数的传递：
+
+| ADDiu     | Type          | ArighLogicI                                  | FL                 | Cpu0Inst                 |
+| --------- | ------------- | -------------------------------------------- | ------------------ | ------------------------ |
+| 0x09      | bits<8>       | -                                            | let Opcode = op;   | -                        |
+| "addiu"   | string        | !strconcat(instr_asm, ...)                   | string asmstr      | let AsmString = asmstr;  |
+| add       | SDNode        | [(set GPROut:$ra, (OpNode ...))]             | list\<dag> pattern | let Pattern = pattern;   |
+| simm16    | Operand       | (ins RC:\$rb, Od:\$imm16)                    | dag ins            | let InOperandList = ins; |
+| immSExt16 | PatLeaf       | [(set GPROut:\$ra, (..., imm_type:\$imm16))] | list\<dag> pattern | let Pattern = pattern;   |
+| CPURegs   | RegisterClass | [(set GPROut:\$ra, (... RC:\$rb, ...))]      | list\<dag> pattern | let Pattern = pattern;   |
+
+RegisterClass 是一种特殊的 Operand。
+
+### 2.7 本章总结
+
+本章，我们新增了一个 pass，实现了一个叫 Cpu0DAGToDAGISel 的类，可以使用 `llc -debug-pass=Structure` 可以查看输出的 pass 结构。
+
+一个简单的后端过程和调用的主要函数罗列在下表：
+
+| 阶段                             | 主要函数                                                     |
+| -------------------------------- | ------------------------------------------------------------ |
+| DAGToDAG 指令选择阶段            | Cpu0TargetLowering::LowerFormalArguments、Cpu0TargetLowerinng::LowerReturn |
+| 指令选择                         | Cpu0DAGToDAGISel::Select                                     |
+| Prologue/Epilogue 插入和栈帧处理 | Cpu0SEFrameLowering::emitPrologue、Cpu0SEFrameLowering::emitEpilogue |
+| Spill callee saved register      | Cpu0SEFrameLowering::determinneCalleeSaves                   |
+| 局部变量栈槽处理                 | Cpu0RegisterInfo::eliminateFrameIndex                        |
+| 寄存器分配前伪指令展开           | Cpu0SEInstrInfo::expandPostRAPseudo                          |
+| 汇编输出                         | Cpu0AsmPrinter.cpp、Cpu0MCInstLower.cpp、Cpu0InstPrinter.cpp |
+
+我们当前仅支持 `ld, st, addiu, ori, lui, addu, shl, ret`这几条指令。虽然看样子功能还很简单，但本章的关键是我们实现了 Cpu0 整个框架。到目前位置，包括注释，我们写了大概 3 千多行代码。但后续会很快，我们只需要不断的添加其他的指令和功能即可。下一章开始，我们将陆续添加其他的指令。
