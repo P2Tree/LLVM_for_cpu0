@@ -1,6 +1,6 @@
 # LLVM for Cpu0
 
-English version for README.md
+English version for [README.md](https://github.com/P2Tree/LLVM_for_cpu0/blob/main/README.md).
 
 ## 介绍
 
