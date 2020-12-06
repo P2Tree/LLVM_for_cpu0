@@ -1,4 +1,4 @@
-# LLVM 后端实践笔记 2
+# LLVM 后端实践笔记 3
 
 [TOC]
 
@@ -146,4 +146,235 @@ llc -march=cpu0 -relocation-model=pic -filetype=asm -cpu0-enable-overflow=true c
 
 然后再看一下 ch3_1_mod.c 这个例子，我将字面常量替换成一个变量，查看汇编输出，会发现使用了 div 来实现求余动作。需要注意的是，编译器在开优化的情况下，会做常量传播优化，将我们的变量直接替换为立即数，并再次通过 mult 和 mul 来实现。可以使用 volatile 来修饰变量，从而避免编译器优化。
 
-#### 
+####3.2 逻辑运算
+
+这一小节新增一些逻辑运算，比如位运算 &, |, ^, ! 和比较运算 ==, !=, <, <=, >, >=。实现部分并不复杂。
+
+#### 3.2.1 文件修改
+
+##### (1) Cpu0InstrInfo.td
+
+针对这些逻辑运算设计它们的 pattern 等信息。
+
+这里反复使用了一个 Pat 类，这个类用来将一个 node 操作和一个或一组指令关联起来。
+
+我们特殊处理的比较操作，会对应到一组指令中。举个例子，使用 cmp 来计算 `a == b`，那么首先，使用 `cmp sw, a, b` 将比较结果的 flag 放到 sw 寄存器中，sw 寄存器的最低两位分别是 Z (bit 1)和 N (bit 0)，如果 a 与 b 相等，那么 Z = 1, N = 0，如果 a 与 b 不相等，那么 Z = 1, N 可为 0 或 1。这样，我们后边只需要对 sw 寄存器做与 0b10 的与运算，提取这两位，然后右移 1 位拿到 Z 的值，它的值赋给另一个寄存器，这便是 `a == b` 的结果。再举个 slt 的例子，使用 slt 计算 `a <= b`，因为 slt 返回的结果是 `a < b` 的结果，所以我们将两个操作数交换，先使用 `slt res, b, a` 计算 `b < a`，将结果 res 再做一次与 0b1 的异或操作，结果调转，就得到了 `a <= b` 的结果。
+
+将两种比较的方式都实现，并在 def 时使用 HasSlt 和 HasCmp 来选择定义。
+
+Cpu032II 中是同时包含有 slt 和 cmp 指令的，但默认是优先选择 slt 指令。其小于运算不需要做这种映射，因为 slt 指令本身就是计算小于结果的。
+
+##### (2) Cpu0ISelLowering.cpp
+
+声明了类型合法化的方案，Cpu0 无法处理 sext_inreg，将其替换为 shl/sra 操作。
+
+#### 3.2.2 简要说明
+
+需要说明的一个设计是，在 cpu032I 中使用 cmp 指令完成比较操作，但在 cpu032II 中使用 slt 指令作为替代，slt 指令比 cmp 指令有优势，它使用通用寄存器来代替 sw 寄存器，能够使用更少的指令来完成比较运算，我们在第 1 章中叙述过这个话题。
+
+比较运算 cmp 指令返回的值是 SW 寄存器编码值，所以要针对我们的需要做一次转换，比如说我们要计算 `a < b`，指令中是 `cmp sw, a, b`，我们要将 sw 中的值分析出来，并最终将比较结果放到一个新的寄存器中。虽然 slt 指令返回一个普通寄存器的值，但因为它计算的是小于的结果，所以如果我们需要计算 `a >= b`，那就要对其结果做取反的运算。这种操作会在下边详细叙述。
+
+以下是比较运算的 LLVM IR、DAG node 和汇编的两种实现：
+
+1. 等于 `==`
+
+   LLVM IR： 
+
+   ```
+   %cmp = icmp eq i32 %0, %1
+   %conv = zext i1 %cmp to i32
+   ```
+
+   DAG node:
+
+   ```
+   %cmp = (setcc %0, %1, seteq)
+   and %cmp, 1
+   ```
+
+   汇编:
+
+   ```assembly
+   // cpu032I
+   cmp $sw, $3, $2
+   andi $2, $sw, 2
+   shr $2, $2, 1
+   andi $2, $2, 1
+   // cpu032II
+   xor $2, $3, $2
+   sltiu $2, $2, 1
+   andi $2, $2, 1
+   ```
+
+2. 不等于 `!=`
+
+   LLVM IR:
+
+   ```
+   %cmp = icmp ne i32 %0, %1
+   %conv = zext i1 %cmp to i32
+   ```
+
+   DAG node:
+
+   ```
+   %cmp = (setcc %0, %1, setne)
+   and %cmp, 1
+   ```
+
+   汇编:
+
+   ```assembly
+   // cpu032I
+   cmp %sw, $3, $2
+   andi $2, $sw, 2
+   shr $2, $2, 1
+   xori $2, $2, 1
+   andi $2, $2, 1
+   // cpu032II
+   xor $2, $3, $2
+   sltu $2, $zero, $2
+   andi $2, $2, 1
+   ```
+
+3. 小于 `<`
+
+   LLVM IR:
+
+   ```
+   %cmp = icmp lt i32 %0, %1
+   %conv = zext i1 %cmp to i32
+   ```
+
+   DAG node:
+
+   ```
+   %cmp = (setcc %0, %1, setlt)
+   and %cmp, 1
+   ```
+
+   汇编:
+
+   ```assembly
+   // cpu032I
+   cmp $sw, $3, $2
+   andi $2, $sw, 1
+   andi $2, $2, 1
+   // cpu032II
+   slt $2, $3, $2
+   andi $2, $2, 1
+   ```
+
+4. 小于等于 `<=`
+
+   LLVM IR:
+
+   ```
+   %cmp = icmp le i32 %0, %1
+   %conv = zext i1 %cmp to i32
+   ```
+
+   DAG node:
+
+   ```
+   %cmp = (setcc %0, %1, setle)
+   and %cmp, 1
+   ```
+
+   汇编:
+
+   ```assembly
+   // cpu032I
+   cmp $sw, $2, $3
+   andi $2, $sw, 1
+   xori $2, $2, 1
+   andi $2, $2, 1
+   // cpu032II
+   slt $2, $3, $2
+   xori $2, $2, 1
+   andi $2, $2, 1
+   ```
+
+5. 大于 `>`
+
+   LLVM IR:
+
+   ```
+   %cmp = icmp gt i32 %0, %1
+   %conv = zext i1 %cmp to i32
+   ```
+
+   DAG node:
+
+   ```
+   %cmp = (setcc %0, %1, setgt)
+   and %cmp, 1
+   ```
+
+   汇编:
+
+   ```assembly
+   // cpu032I
+   cmp $sw, $2, $3
+   andi $2, $sw, 1
+   andi $2, $2, 1
+   // cpu032II
+   slt $2, $3, $2
+   andi $2, $2, 1
+   ```
+
+6. 大于等于 `>=`
+
+   LLVM IR:
+
+   ```
+   %cmp = icmp ge i32 %0, %1
+   %conv = zext i1 %cmp to i32
+   ```
+
+   DAG node:
+
+   ```
+   %cmp = (setcc %0, %1, setle)
+   and %cmp, 1
+   ```
+
+   汇编:
+
+   ```assembly
+   // cpu032I
+   cmp $sw, $3, $2
+   andi $2, $sw, 1
+   xori $2, $2, 1
+   andi $2, $2, 1
+   // cpu032II
+   slt $2, $3, $2
+   xori $2, $2, 1
+   andi $2, $2, 1
+   ```
+
+   
+
+#### 3.2.3 检验成果
+
+首先是逻辑运算，使用示例程序 ch3_2_logic.c 进行编译，检查汇编输出。
+
+```
+build/bin/clang -target mips-unknown-linux-gnu -c ch4_2_logic.cpp -emit-llvm -o ch4_2_logic.bc
+build/bin/llc -march=cpu0 -mcpu=cpu032I -relocation-model=pic -filetype=asm ch4_2_logic.bc -o -
+```
+
+当指定 -mcpu=cpu032I 时，汇编输出的内容中，实现比较操作的是 cmp 指令。
+
+```
+build/bin/llc -march=cpu0 -mcpu=cpu032II -relocation-model=pic -filetype=asm ch4_2_logic.bc -o -
+```
+
+当指定 -mcpu=cpu032II 时，汇编输出的内容中，实现比较操作的替换为 slt 指令。
+
+### 3.3 本章总结
+
+这一章我们增加了 20 多条算术和逻辑运算指令，增加了大概几百行代码。
+
+下一章我们尝试生成二进制文件。
+
