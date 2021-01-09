@@ -749,10 +749,10 @@ def store_a : AlignedStore<store>;  // store 同理，不再展示
 | :--- | :--- | :--- | :--- | :--- |
 | 0x09 | bits | - | let Opcode = op; | - |
 | "addiu" | string | !strconcat\(instr\_asm, ...\) | string asmstr | let AsmString = asmstr; |
-| add | SDNode | \[\(set GPROut:$ra, \(OpNode ...\)\)\] | list\ pattern | let Pattern = pattern; |
+| add | SDNode | \[\(set GPROut:$ra, \(OpNode ...\)\)\] | list pattern | let Pattern = pattern; |
 | simm16 | Operand | \(ins RC:$rb, Od:$imm16\) | dag ins | let InOperandList = ins; |
-| immSExt16 | PatLeaf | \[\(set GPROut:$ra, \(..., imm\_type:$imm16\)\)\] | list\ pattern | let Pattern = pattern; |
-| CPURegs | RegisterClass | \[\(set GPROut:$ra, \(... RC:$rb, ...\)\)\] | list\ pattern | let Pattern = pattern; |
+| immSExt16 | PatLeaf | \[\(set GPROut:$ra, \(..., imm\_type:$imm16\)\)\] | list pattern | let Pattern = pattern; |
+| CPURegs | RegisterClass | \[\(set GPROut:$ra, \(... RC:$rb, ...\)\)\] | list pattern | let Pattern = pattern; |
 
 RegisterClass 是一种特殊的 Operand。
 
