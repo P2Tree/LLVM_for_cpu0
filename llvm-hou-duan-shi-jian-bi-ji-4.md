@@ -1,7 +1,5 @@
 # LLVM 后端实践笔记 4
 
-[TOC]
-
 ## 4 生成目标文件
 
 之前的章节只介绍了汇编代码生成的内容，这一章，我们将介绍对 ELF 目标格式文件的支持以及如何使用 objdump 工具来验证生成的目标文件。在 LLVM 代码框架下，只需要增加少量的代码，Cpu0 后端就可以生成支持大端或小端编码的目标文件。目标注册机制以及它的结构也在本章介绍。
@@ -62,7 +60,7 @@ TargetStreamer 和 ELFStreamer 在生成 ELF 文件中同时起作用，ELFStrea
 
 我们知道这个文件中会完成注册一些后端模块的功能。
 
-首先定义了两个函数，`createMCStreamer()` 调用 `createCpu0ELFStreamer()` 用来建立 ELFStreamer 对象，`createCpu0AsmTargetStreamer()` 直接建立 Cpu0TargetAsmStreamer 对象。 
+首先定义了两个函数，`createMCStreamer()` 调用 `createCpu0ELFStreamer()` 用来建立 ELFStreamer 对象，`createCpu0AsmTargetStreamer()` 直接建立 Cpu0TargetAsmStreamer 对象。
 
 然后就是调用 `TargetRegistry::RegisterELFStreamer()` 和 `TargetRegistry::RegisterAsmTargetStreamer()` 来注册这两个对象模块。另外，还调用 `TargetRegistry::RegisterMCCodeEmitter()` 来注册大小端的 MCCodeEmitter 对象，以及调用 `TargetRegistry::RegisterMCAsmBackend()` 来注册大小端的 MCAsmBackend 对象。
 
