@@ -6,7 +6,7 @@
 
 ### 介绍
 
-这个项目是一个学习 LLVM 的教程，我实现了一个 LLVM 框架下的后端，用来编译能够在 Cpu0 上执行的可执行代码，Cpu0 是一个简单易学的 RISC 处理器。另外，我还编写了一份详细的中文文档作为 LLVM 初学者的指南，它们放在 `doc` 路径下。
+这个项目是一个学习 LLVM 的教程，我实现了一个 LLVM 框架下的后端，用来编译能够在 Cpu0 上执行的可执行代码，Cpu0 是一个简单易学的 RISC 处理器。另外，我还编写了一份详细的中文文档作为 LLVM 初学者的指南，它们放在 `tutorial` 路径下。
 
 这个目录和其子目录下包含着完整的 LLVM 的源代码，目前是 8.0.0 版本，以及用于构建优化编译器、优化器和运行时环境的工具包。
 
@@ -14,7 +14,7 @@
 
 ### 使用方法
 
-你可以把文档的每个章节作为指南来阅读和学习，并把工程中的代码作为参考。 我把每个章节修改过的文件都放到了 `shortcut/ch_x` 的各个路径下，如果在编码是有困惑，可以辅助查看。 我知道，目前代码和文档里依然会有问题，如果你有任何疑问，欢迎告知我。
+你可以把文档的每个章节作为指南来阅读和学习，并把工程中的代码作为参考。 我把每个章节修改过的文件都放到了 `shortcut/ch_x` 的各个路径下，如果在编码时有困惑，可以辅助查看。 我知道，目前代码和文档里依然会有问题，如果你有任何疑问，欢迎告知我。
 
 ### 感谢
 
@@ -26,7 +26,7 @@ Project path: [https://github.com/P2Tree/LLVM\_for\_cpu0](https://github.com/P2T
 
 ### Introduction
 
-This is a tutorial to learn LLVM, I realize a backend in LLVM infrastructure to compiler execute code for Cpu0 which is a simple RISC cpu. And I also write a detailed tutorial document by Chinese as a guidance for Chinese LLVM beginner. You can find it in the `doc`.
+This is a tutorial to learn LLVM, I realize a backend in LLVM infrastructure to compiler execute code for Cpu0 which is a simple RISC cpu. And I also write a detailed tutorial document by Chinese as a guidance for Chinese LLVM beginner. You can find it in the `toturial`.
 
 This directory and its subdirectories contain source code for LLVM \( LLVM 8.0.0 currently \), a toolkit for the construction of highly optimized compilers, optimizers, and runtime environments.
 
