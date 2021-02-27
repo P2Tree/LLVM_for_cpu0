@@ -399,6 +399,7 @@ defm SH      : StoreM32<0x08, "sh", truncstorei16_a>;
 
 // Arithmetic Instructions (ALU Immediate)
 def ADDiu    : ArithLogicI<0x09, "addiu", add, simm16, immSExt16, CPURegs>;
+def ORi      : ArithLogicI<0x0d, "ori", or, uimm16, immZExt16, CPURegs>;
 
 def LUi      : LoadUpper<0x0f, "lui", GPROut, uimm16>;
 
@@ -458,7 +459,6 @@ def C0MOVE   : C0Move<0x52, "c0mov">;
 
 // Logic Instructions
 def ANDi     : ArithLogicI<0x0c, "andi", and, uimm16, immZExt16, CPURegs>;
-def ORi      : ArithLogicI<0x0d, "ori", or, uimm16, immZExt16, CPURegs>;
 def XORi     : ArithLogicI<0x0e, "xori", xor, uimm16, immZExt16, CPURegs>;
 
 def AND      : ArithLogicR<0x18, "and", and, IIAlu, CPURegs, 1>;
