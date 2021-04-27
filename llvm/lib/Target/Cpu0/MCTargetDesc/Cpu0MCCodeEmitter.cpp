@@ -71,10 +71,8 @@ void Cpu0MCCodeEmitter::encodeInstruction(const MCInst &MI, raw_ostream &OS,
   uint32_t Binary = getBinaryCodeForInstr(MI, Fixups, STI);
 
   // Check for unimplemented opcodes.
-  // Unfortunately in CPU0 both NOT and SHL will come in with Binary == 0
-  // so we have to special check for them.
   unsigned Opcode = MI.getOpcode();
-  if ((Opcode != Cpu0::NOP) && (Opcode != Cpu0::SHL) && !Binary)
+  if ((Opcode != Cpu0::NOP) && !Binary)
     llvm_unreachable("unimplemented opcode in encodeInstruction()");
 
   const MCInstrDesc &Desc = MCII.get(MI.getOpcode());

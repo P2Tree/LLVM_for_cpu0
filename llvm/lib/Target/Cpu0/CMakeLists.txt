@@ -38,6 +38,7 @@ add_llvm_target(Cpu0CodeGen
   Cpu0MCInstLower.cpp
   Cpu0AnalyzeImmediate.cpp
   Cpu0DelUselessJMP.cpp
+  Cpu0DelaySlotFiller.cpp
   )
 
 # Should match with "subdirectories = MCTargetDesc TargetInfo" in LLVMBuild.txt

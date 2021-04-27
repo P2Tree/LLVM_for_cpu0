@@ -22,6 +22,7 @@ namespace llvm {
   class FunctionPass;
 
   FunctionPass *createCpu0DelJmpPass(Cpu0TargetMachine &TM);
+  FunctionPass *createCpu0DelaySlotFillerPass(Cpu0TargetMachine &TM);
 } // end namespace llvm
 
 #define ENABLE_GPRESTORE  // The $gp register caller saved register enable

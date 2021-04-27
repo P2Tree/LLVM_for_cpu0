@@ -169,5 +169,6 @@ void Cpu0PassConfig::addPreEmitPass() {
   Cpu0TargetMachine &TM = getCpu0TargetMachine();
 
   addPass(createCpu0DelJmpPass(TM));
+  addPass(createCpu0DelaySlotFillerPass(TM));
 }
 
