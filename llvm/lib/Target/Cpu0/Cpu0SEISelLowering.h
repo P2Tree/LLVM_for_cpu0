@@ -20,8 +20,11 @@ public:
                                 const Cpu0Subtarget &STI);
 
   SDValue LowerOperation(SDValue Op, SelectionDAG &DAG) const override;
+private:
+  bool isEligibleForTailCallOptimization(const Cpu0CC &Cpu0CCInfo,
+                                         unsigned NextStackOffset,
+                           const Cpu0MachineFunctionInfo &FI) const override;
 };
-
 }// End llvm namespace
 
 #endif

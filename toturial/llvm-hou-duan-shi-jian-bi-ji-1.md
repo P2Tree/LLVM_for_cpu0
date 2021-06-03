@@ -184,7 +184,9 @@ cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Debug ../llvm
 
 `-G` 后边的那个配置是指定 cmake 生成哪种编译配置文件，比如 `"Unix Makfile"` 就是 make 使用的，还可以指定 `Ninja` 或 `Xcode`，它会对应生成 ninja 的编译文件或 xcode 的编译文件。我喜欢用 ninja，编译输出更清晰，但后两个需要你有环境，比如自己安装 ninja 软件或 xcode，而 make 在 Linux 机器和 Mac 机器上是自带的。下文中涉及到编译时，我会使用 ninja，当然这些都不重要。
 
-cmake 还可以指定其他参数，比如：`-DLLVM_TARGETS_TO_BUILD=Cpu0`，这个表示只编译 Cpu0 后端，这样编译会快一些，毕竟 LLVM 的后端太多了，都编译没必要（不过我们还没实现 Cpu0 的后端，如果你不希望编译时炸出一堆错误，目前还是不要加这个参数了）。`-DCMAKE_BUILD_TYPE=Debug`可以改成 Release，编译会快一些，但如果需要调试编译器的话，还是需要使用 Debug 模式。
+cmake 还可以指定其他参数，比如：`-DLLVM_TARGETS_TO_BUILD=Cpu0`，这个表示只编译 Cpu0 后端，这样编译会快一些，毕竟 LLVM 的后端太多了，都编译没必要（不过我们还没实现 Cpu0 的后端，如果你不希望编译时炸出一堆错误，目前还是不要加这个参数了）。之后可以编译 Cpu0 后端之后，选择仅编译 Cpu0 和 Mips 这两个后端，参数是：`-DLLVM_TARGETS_TO_BUILD="Cpu0;Mips"`。
+
+`-DCMAKE_BUILD_TYPE=Debug`可以改成 Release，编译会快一些，但如果需要调试编译器的话，还是需要使用 Debug 模式。
 
 指定 `-DMAKE_INSTALL_PREFIX=path`可以指定安装路径，也就是 `make install` 时输出的位置。我一般不指定这个参数，主要是觉得没必要，我直接从 build/bin 下边拿编好程序。
 

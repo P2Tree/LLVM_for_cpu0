@@ -54,3 +54,20 @@ llvm::createCpu0SETargetLowering(const Cpu0TargetMachine &TM,
                            const Cpu0Subtarget &STI) {
   return new Cpu0SETargetLowering(TM, STI);
 }
+
+bool Cpu0SETargetLowering::
+isEligibleForTailCallOptimization(const Cpu0CC &Cpu0CCInfo,
+                                  unsigned NextStackOffset,
+                                  const Cpu0MachineFunctionInfo &FI) const {
+  if (!EnableCpu0TailCalls)
+    return false;
+
+  // Return false if either the callee or caller has a byval argument.
+  if (Cpu0CCInfo.hasByValArg() || FI.hasByvalArg())
+    return false;
+
+  // Return true if the callee's argument area is no larger than the
+  // calleer's.
+  return NextStackOffset <= FI.getIncomingArgSize();
+}
+
