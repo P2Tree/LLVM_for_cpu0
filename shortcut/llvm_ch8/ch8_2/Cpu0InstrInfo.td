@@ -544,6 +544,12 @@ def RORV     : ShiftRotateR<0x24, 0x01, "rorv", rotr, CPURegs>;
 // Jump Instructions
 def JR       : JumpFR<0x3c, "jr", GPROut>;
 
+// long branch support
+let isBranch = 1, isTerminator = 1, isBarrier = 1,
+    hasDelaySlot = 0, Defs = [LR] in
+def BAL: FJ<0x3A, (outs), (ins jmptarget:$addr), "bal\t$addr", [], IIBranch>,
+         Requires<[HasSlt]>;
+
 // Jump & link and return instruction
 def JSUB     : JumpLink<0x3b, "jsub">;
 

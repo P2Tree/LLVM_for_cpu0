@@ -38,9 +38,10 @@ namespace {
       return "Cpu0 Del Useless jmp";
     }
 
-    bool runOnMachineBasicBlock(MachineBasicBlock &MBB, MachineBasicBlock &MBBN);
+    bool runOnMachineBasicBlock(MachineBasicBlock &MBB,
+                                MachineBasicBlock &MBBN);
 
-    bool runOnMachineFunction(MachineFunction &F) {
+    bool runOnMachineFunction(MachineFunction &F) override {
       bool Changed = false;
       if (EnableDelJmp) {
         MachineFunction::iterator FJ = F.begin();

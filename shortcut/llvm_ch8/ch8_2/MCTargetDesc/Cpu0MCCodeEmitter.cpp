@@ -142,7 +142,7 @@ getJumpTargetOpValue(const MCInst &MI, unsigned OpNo,
   assert(MO.isExpr() && "getJumpTargetOpValue expects only expressions");
 
   const MCExpr *Expr = MO.getExpr();
-  if (Opcode == Cpu0::JMP || Opcode == Cpu0::JSUB)
+  if (Opcode == Cpu0::JMP || Opcode == Cpu0::JSUB || Opcode == Cpu0::BAL)
     Fixups.push_back(MCFixup::create(0, Expr,
                                      MCFixupKind(Cpu0::fixup_Cpu0_PC24)));
   else
