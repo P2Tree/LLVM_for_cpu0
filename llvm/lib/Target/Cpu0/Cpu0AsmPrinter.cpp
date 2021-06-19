@@ -48,6 +48,13 @@ bool Cpu0AsmPrinter::runOnMachineFunction(MachineFunction &MF) {
   return true;
 }
 
+bool Cpu0AsmPrinter::lowerOperand(const MachineOperand &MO, MCOperand &MCOp) {
+  MCOp = MCInstLowering.LowerOperand(MO);
+  return MCOp.isValid();
+}
+
+#include "Cpu0GenMCPseudoLowering.inc"
+
 //@EmitInstruction {
 //- EmitInstruction() must exists or will have run time error.
 void Cpu0AsmPrinter::EmitInstruction(const MachineInstr *MI) {
@@ -66,6 +73,9 @@ void Cpu0AsmPrinter::EmitInstruction(const MachineInstr *MI) {
   MachineBasicBlock::const_instr_iterator E = MI->getParent()->instr_end();
 
   do {
+    // Do any auto-generated pseudo lowerings.
+    if (emitPseudoExpansionLowering(*OutStreamer, &*I))
+      continue;
 
     // if (I->isPseudo() && !isLongBranchPseudo(I->getOpcode()))
     if (I->isPseudo())

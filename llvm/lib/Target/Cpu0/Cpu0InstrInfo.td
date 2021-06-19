@@ -41,6 +41,8 @@ def callseq_start : SDNode<"ISD::CALLSEQ_START", SDT_Cpu0CallSeqStart,
 def callseq_end : SDNode<"ISD::CALLSEQ_END", SDT_Cpu0CallSeqEnd,
                          [SDNPHasChain, SDNPOptInGlue,
                           SDNPSideEffect, SDNPOutGlue]>;
+def Cpu0TailCall : SDNode<"Cpu0ISD::TailCall", SDT_Cpu0JmpLink,
+                          [SDNPHasChain, SDNPOptInGlue, SDNPVariadic]>;
 
 // Return
 def Cpu0Ret : SDNode<"Cpu0ISD::Ret", SDTNone,
@@ -111,6 +113,18 @@ let isCall = 1, hasDelaySlot = 1 in {
     let ra = 14;
     let shamt = 0;
   }
+}
+
+let isCall = 1, isTerminator = 1, isReturn = 1, isBarrier = 1, hasDelaySlot = 1,
+    hasExtraSrcRegAllocReq = 1, Defs = [AT] in {
+  class TailCall<Instruction JumpInst> :
+    Cpu0Pseudo<(outs), (ins calltarget:$target), "", [], IIBranch>,
+    PseudoInstExpansion<(JumpInst jmptarget:$target)>;
+
+  class TailCallReg<RegisterClass RO, Instruction JRInst,
+                    RegisterClass ResRO = RO> :
+    Cpu0Pseudo<(outs), (ins RO:$rs), "", [(Cpu0TailCall RO:$rs)], IIBranch>,
+    PseudoInstExpansion<(JRInst ResRO:$rs)>;
 }
 
 // Signed Operand
@@ -632,6 +646,8 @@ let hasSideEffects = 0 in
   def CPRESTORE : Cpu0Pseudo<(outs), (ins i32imm:$loc, CPURegs:$gp),
                              ".cprestore\t$loc", []>;
 
+def TAILCALL : TailCall<JMP>;
+def TAILCALL_R : TailCallReg<GPROut, JR>;
 
 
 //===----------------------------------------------------------------------===//
@@ -884,6 +900,11 @@ def : Pat<(Cpu0JmpLink (i32 tglobaladdr:$dst)),
           (JSUB tglobaladdr:$dst)>;
 def : Pat<(Cpu0JmpLink (i32 texternalsym:$dst)),
           (JSUB texternalsym:$dst)>;
+
+def : Pat<(Cpu0TailCall (iPTR tglobaladdr:$dst)),
+          (TAILCALL tglobaladdr:$dst)>;
+def : Pat<(Cpu0TailCall (iPTR texternalsym:$dst)),
+          (TAILCALL texternalsym:$dst)>;
 
 // Conditional moves:
 // These instructions are expanded in

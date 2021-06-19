@@ -38,6 +38,10 @@ private:
   // lowerOperand : Convert a MachineOperand into the equivalent MCOperand
   bool lowerOperand(const MachineOperand &MO, MCOperand &MCOp);
 
+  // tblgen'erated function.
+  bool emitPseudoExpansionLowering(MCStreamer &OutStreamer,
+                                   const MachineInstr *MI);
+
   /* bool isLongBranchPseudo(int Opcode) const; */
 
 public:
@@ -69,6 +73,7 @@ public:
   void EmitFunctionBodyEnd() override;
   void EmitStartOfAsmFile(Module &M) override;
   void PrinterDebugValueComment(const MachineInstr *MI, raw_ostream &OS);
+
 };
 } // end namespace llvm
 

@@ -621,7 +621,6 @@ Cpu0TargetLowering::LowerFormalArguments(SDValue Chain,
     EVT ValVT = VA.getValVT();
     ISD::ArgFlagsTy Flags = Ins[i].Flags;
     bool IsRegLoc = VA.isRegLoc();
-    //@byval pass {
     if (Flags.isByVal()) {
       assert(Flags.getByValSize() &&
              "ByVal args of size 0 should have been ignored by front-end.");
