@@ -22,6 +22,7 @@ subdirectories =
   MCTargetDesc
   TargetInfo
   InstPrinter
+  Disassembler
 
 [component_0]
 # TargetGroup components are an extension of LibraryGroups, specifically for
@@ -36,6 +37,7 @@ parent = Target
 #  , and supports JIT compilation. They are optional.
 # Let asmprinter enable
 has_asmprinter = 1
+has_disassembler = 1
 
 [component_1]
 # component_1 is a Library type and name is Cpu0CodeGen. After build it will

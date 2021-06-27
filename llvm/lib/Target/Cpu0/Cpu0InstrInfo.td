@@ -377,6 +377,8 @@ class JumpFR<bits<8> op, string instrAsm, RegisterClass regClass>
   let isBarrier = 1;
   let hasDelaySlot = 1;
   let isIndirectBranch = 1;
+
+  let DecoderMethod = "DecodeJumpFR";
 }
 
 // Call
