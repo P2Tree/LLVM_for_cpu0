@@ -135,6 +135,21 @@ void Cpu0DAGToDAGISel::Select(SDNode *Node) {
   SelectCode(Node);
 }
 
+// Inline Asm
+bool Cpu0DAGToDAGISel::
+SelectInlineAsmMemoryOperand(Const SDValue &Op, unsigned ConstraintID,
+                             std::vector<SDValue> &OutOps) {
+  // All memory constraints can at least accept raw pointer
+  switch (ConstraintID) {
+  case InlineAsm::Constraint_m:
+    OutOps.push_back(Op);
+    return false;
+  default:
+    llvm_unreachable("Unexpected asm memory constraint");
+  }
+  return true;
+}
+
 // Output the instructions required to put the GOT address into a register.
 SDNode *Cpu0DAGToDAGISel::getGlobalBaseReg() {
   unsigned GlobalBaseReg = MF->getInfo<Cpu0MachineFunctionInfo>()->getGlobalBaseReg();

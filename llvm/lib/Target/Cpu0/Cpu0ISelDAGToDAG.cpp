@@ -157,3 +157,19 @@ SDNode *Cpu0DAGToDAGISel::getGlobalBaseReg() {
                                                 CurDAG->getDataLayout()))
       .getNode();
 }
+
+// Inlineasm
+bool Cpu0DAGToDAGISel::
+SelectInlineAsmMemoryOperand(const SDValue &Op, unsigned ConstraintID,
+                             std::vector<SDValue> &OutOps) {
+  // All memory constraints can at least accept raw pointers
+  switch (ConstraintID) {
+  default:
+    llvm_unreachable("Unexpected asm memory constraint");
+  case InlineAsm::Constraint_m:
+    OutOps.push_back(Op);
+    return false;
+  }
+
+  return true;
+}

@@ -1249,3 +1249,259 @@ passByValArg(SDValue Chain, const SDLoc &DL,
   MemOpChains.push_back(Chain);
 }
 
+//===----------------------------------------------------------------------===//
+//                         Cpu0 Inline Assembly Support
+//===----------------------------------------------------------------------===//
+
+// Given a constraint letter, return the type of constraint it is for this
+// target.
+Cpu0TargetLowering::ConstraintType
+Cpu0TargetLowering::getConstraintType(StringRef Constraint) const {
+  // Cpu0 specific constraints
+  if (Constraint.size() == 1) {
+    switch (Constraint[0]) {
+    default: break;
+    case 'c':
+      // A register suitable for use in an indirect jump.
+      // This will always be $t9 for -mabicalls
+      return C_RegisterClass;
+    case 'R':
+      return C_Memory;
+    }
+  }
+  return TargetLowering::getConstraintType(Constraint);
+}
+
+TargetLowering::ConstraintWeight
+Cpu0TargetLowering::getSingleConstraintMatchWeight(AsmOperandInfo &Info,
+                                                   const char *Constraint) const {
+  ConstraintWeight Weight = CW_Invalid;
+  Value *CallOperandVal = Info.CallOperandVal;
+
+  // If we don't have a value, we can't do a match,
+  // but allow it at the lowest weight.
+  if (!CallOperandVal)
+    return CW_Default;
+  Type *T = CallOperandVal->getType();
+
+  switch(*Constraint) {
+  default:
+    Weight = TargetLowering::getSingleConstraintMatchWeight(Info, Constraint);
+    break;
+  case 'c': // $t9 for indirect jumps
+    if (T->isIntegerTy())
+      Weight = CW_SpecificReg;
+    break;
+  case 'I': // signed 16 bit immediate
+  case 'J': // integer zero
+  case 'K': // unsigned 16 bit immediate
+  case 'L': // signed 32 bit immediate where lower 16 bits are 0
+  case 'N': // immediate in the range of -65535 to -1 (inclusive)
+  case 'O': // signed 15 bit immediate (+- 16383)
+  case 'P': // immediate in the range of 65535 to 1 (inclusive)
+    if (isa<ConstantInt>(CallOperandVal))
+      Weight = CW_Constant;
+    break;
+  case 'R':
+    Weight = CW_Memory;
+    break;
+  }
+  return Weight;
+}
+
+// This is a helper function to parse a physical register string and split it
+// into non-numeric and numeric parts (Prefix and Reg). The first boolean flag
+// that is returned indicates whether parsing was successful. The second flag
+// is true if the numeric part exists.
+static std::pair<bool, bool>
+parsePhysicalReg(const StringRef &C, std::string &Prefix,
+                 unsigned long long &Reg) {
+  if (C.front() != '{' || C.back() != '}')
+    return std::make_pair(false, false);
+
+  // Search for the first numeric character.
+  StringRef::const_iterator I, B = C.begin() + 1, E = C.end() - 1;
+  I = std::find_if(B, E, isdigit);
+
+  Prefix.assign(B, I - B);
+
+  // The second flag is set to false if no numeric characters were found.
+  if (I == E)
+    return std::make_pair(true, false);
+
+  // Parse the numeric characters
+  return std::make_pair(!getAsUnsignedInteger(StringRef(I, E - I), 10, Reg),
+                        true);
+}
+
+std::pair<unsigned, const TargetRegisterClass *>
+Cpu0TargetLowering::ParseRegForInlineAsmConstraint(const StringRef &C, MVT VT) const {
+  const TargetRegisterClass *RC;
+  std::string Prefix;
+  unsigned long long Reg;
+
+  std::pair<bool, bool> R = parsePhysicalReg(C, Prefix, Reg);
+
+  if (!R.first)
+    return std::make_pair(0U, nullptr);
+  if (!R.second)
+    return std::make_pair(0U, nullptr);
+
+  // Parse $0 - $15
+  assert(Prefix == "$");
+  RC = getRegClassFor((VT == MVT::Other) ? MVT::i32 : VT);
+
+  assert(Reg < RC->getNumRegs());
+  return std::make_pair(*(RC->begin() + Reg), RC);
+}
+
+// Given a register class constraint, if this corresponds directly to an LLVM
+// register class, return a register of 0 and the register class pointer.
+std::pair<unsigned, const TargetRegisterClass *>
+Cpu0TargetLowering::getRegForInlineAsmConstraint(const TargetRegisterInfo *TRI,
+                                                 StringRef Constraint,
+                                                 MVT VT) const {
+  if (Constraint.size() == 1) {
+    switch (Constraint[0]) {
+    case 'r':
+      if (VT == MVT::i32 || VT == MVT::i16 || VT == MVT::i8) {
+        return std::make_pair(0U, &Cpu0::CPURegsRegClass);
+      }
+      if (VT == MVT::i64)
+        return std::make_pair(0U, &Cpu0::CPURegsRegClass);
+      // This will generate an error message
+      return std::make_pair(0U, static_cast<const TargetRegisterClass *>(0));
+    case 'c': // register suitable for indirect jumps
+      if (VT == MVT::i32)
+        return std::make_pair((unsigned)Cpu0::T9, &Cpu0::CPURegsRegClass);
+      assert(false && "Unexpected type.");
+    }
+  }
+
+  std::pair<unsigned, const TargetRegisterClass *> R;
+  R = ParseRegForInlineAsmConstraint(Constraint, VT);
+
+  if (R.second)
+    return R;
+
+  return TargetLowering::getRegForInlineAsmConstraint(TRI, Constraint, VT);
+}
+
+// Lower the specified operand into the Ops vector
+void Cpu0TargetLowering::LowerAsmOperandForConstraint(SDValue Op,
+                                                      std::string &Constraint,
+                                                      std::vector<SDValue> &Ops,
+                                                      SelectionDAG &DAG) const {
+  SDLoc DL(Op);
+  SDValue Result;
+
+  // Only support length 1 constraints for now.
+  if (Constraint.length() > 1) return;
+
+  char ConstraintLetter = Constraint[0];
+  switch (ConstraintLetter) {
+  default: break;
+  case 'I':
+    // If this fails, the parent routine will give an error
+    if (ConstantSDNode *C = dyn_cast<ConstantSDNode>(Op)) {
+      EVT Type = Op.getValueType();
+      int64_t Val = C->getSExtValue();
+      if (isInt<16>(Val)) {
+        int64_t Val = C->getSExtValue();
+        if (isInt<16>(Val)) {
+          Result = DAG.getTargetConstant(Val, DL, Type);
+          break;
+        }
+      }
+    }
+    return;
+  case 'J': // integer zero
+    if (ConstantSDNode *C = dyn_cast<ConstantSDNode>(Op)) {
+      EVT Type = Op.getValueType();
+      int64_t Val = C->getZExtValue();
+      if (Val == 0) {
+        Result = DAG.getTargetConstant(0, DL, Type);
+        break;
+      }
+    }
+    return;
+  case 'K': // unsigned 16 bit immediate
+    if (ConstantSDNode *C = dyn_cast<ConstantSDNode>(Op)) {
+      EVT Type = Op.getValueType();
+      uint64_t Val = (uint64_t)C->getZExtValue();
+      if (isUInt<16>(Val)) {
+        Result = DAG.getTargetConstant(Val, DL, Type);
+        break;
+      }
+    }
+    return;
+  case 'L': // signed 32 bit immediate where lower 16 bits are 0
+    if (ConstantSDNode *C = dyn_cast<ConstantSDNode>(Op)) {
+      EVT Type = Op.getValueType();
+      uint64_t Val = (uint64_t)C->getZExtValue();
+      if ((isUInt<16>(Val)) && ((Val & 0xffff) == 0)) {
+        Result = DAG.getTargetConstant(Val, DL, Type);
+        break;
+      }
+    }
+    return;
+  case 'N': // immediate in the range of -65535 to -1 (inclusive)
+    if (ConstantSDNode *C = dyn_cast<ConstantSDNode>(Op)) {
+      EVT Type = Op.getValueType();
+      int64_t Val = (int64_t)C->getZExtValue();
+      if ((Val >= -65535) && (Val <= -1)) {
+        Result = DAG.getTargetConstant(Val, DL, Type);
+        break;
+      }
+    }
+    return;
+  case 'O': // signed 15 bit immediate
+    if (ConstantSDNode *C = dyn_cast<ConstantSDNode>(Op)) {
+      EVT Type = Op.getValueType();
+      uint64_t Val = (uint64_t)C->getZExtValue();
+      if ((isInt<15>(Val))) {
+        Result = DAG.getTargetConstant(Val, DL, Type);
+        break;
+      }
+    }
+    return;
+  case 'P': // immediate in the range of 1 to 65535 (inclusive)
+    if (ConstantSDNode *C = dyn_cast<ConstantSDNode>(Op)) {
+      EVT Type = Op.getValueType();
+      uint64_t Val = (uint64_t)C->getZExtValue();
+      if ((Val <= 65535) && (Val >= 1)) {
+        Result = DAG.getTargetConstant(Val, DL, Type);
+        break;
+      }
+    }
+    return;
+  }
+
+  if (Result.getNode()) {
+    Ops.push_back(Result);
+    return;
+  }
+
+  TargetLowering::LowerAsmOperandForConstraint(Op, Constraint, Ops, DAG);
+}
+
+bool Cpu0TargetLowering::isLegalAddressingMode(const DataLayout &DL,
+                                               const AddrMode &AM, Type *Ty,
+                                               unsigned AS, Instruction *I) const {
+  // No global is ever allowed as a base.
+  if (AM.BaseGV)
+    return false;
+
+  switch (AM.Scale) {
+  case 0: // "r+i" or just "i", depending on HasBaseReg.
+    break;
+  case 1:
+    if (!AM.HasBaseReg) // allow "r+i"
+      break;
+    return false; // disallow "r+r" or "r+r+i"
+  default:
+    return false;
+  }
+
+  return true;
+}

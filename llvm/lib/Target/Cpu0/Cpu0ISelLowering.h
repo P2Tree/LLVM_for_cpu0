@@ -94,6 +94,35 @@ public:
 
   bool isOffsetFoldingLegal(const GlobalAddressSDNode *GA) const override;
 
+  // Inline asm support
+  ConstraintType getConstraintType(StringRef Constraint) const override;
+
+  // Examine constraint string and operand type and determine a weight value.
+  // The operand object must already have been set up with the operand type.
+  ConstraintWeight getSingleConstraintMatchWeight(
+    AsmOperandInfo &Info, const char *Constraint) const override;
+
+  // This function parses registers that appear in inline-asm constraints.
+  std::pair<unsigned, const TargetRegisterClass *>
+  ParseRegForInlineAsmConstraint(const StringRef &C, MVT MT) const;
+
+  std::pair<unsigned, const TargetRegisterClass *>
+  getRegForInlineAsmConstraint(const TargetRegisterInfo *TRI,
+                               StringRef Constraint, MVT MT) const override;
+
+  // Lower the specified operand into the Ops vector.
+  // If it is invalid, don't add anything to Ops. If hasMemory is true it means
+  // one of the asm constraint of the inline asm instruction being processed is
+  // 'm'.
+  void LowerAsmOperandForConstraint(SDValue Op,
+                                    std::string &Constraint,
+                                    std::vector<SDValue> &Ops,
+                                    SelectionDAG &DAG) const override;
+
+  bool isLegalAddressingMode(const DataLayout &DL, const AddrMode &AM,
+                             Type *Ty, unsigned AS,
+                             Instruction *I = nullptr) const override;
+
 protected:
   SDValue getGlobalReg(SelectionDAG &DAG, EVT Ty) const;
 

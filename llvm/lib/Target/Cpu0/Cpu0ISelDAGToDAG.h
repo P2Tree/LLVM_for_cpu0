@@ -61,6 +61,8 @@ private:
   // Complex Pattern
   bool SelectAddr(SDNode *Parent, SDValue N, SDValue &Base, SDValue &Offset);
 
+  bool SelectInlineAsmMemoryOperand(const SDValue &Op, unsigned ConstraintID,
+                                    std::vector<SDValue> &OutOps) override;
   // Return a target constant with the specified value.
   inline SDValue getImm(const SDNode *Node, unsigned Imm) {
     return CurDAG->getTargetConstant(Imm, SDLoc(Node), Node->getValueType(0));

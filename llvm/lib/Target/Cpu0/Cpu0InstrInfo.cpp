@@ -38,6 +38,11 @@ const Cpu0InstrInfo *Cpu0InstrInfo::create(Cpu0Subtarget &STI) {
 
 unsigned Cpu0InstrInfo::GetInstSizeInBytes(const MachineInstr &MI) const {
   switch (MI.getOpcode()) {
+    case TargetOpcode::INLINEASM: {
+      const MachineFunction *MF = MI.getParent()->getParent();
+      const char *AsmStr = MI.getOperand(0).getSymbolName();
+      return getInlineAsmLength(AsmStr, *MF->getTarget().getMCAsmInfo());
+    }
     default:
       return MI.getDesc().getSize();
   }
