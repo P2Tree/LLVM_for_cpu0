@@ -6,7 +6,6 @@ int test_rotate_left()
   return result;
 }
 
-# if 0
 int test_rotate_left1()
 {
   volatile unsigned int a = 4;
@@ -24,4 +23,3 @@ int test_rotate_right()
 
   return result;
 }
-#endif

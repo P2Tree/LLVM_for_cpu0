@@ -1,4 +1,4 @@
-int test_mult()
+int test_mod()
 {
   int b = 11;
   int a = 12;
