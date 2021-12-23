@@ -182,7 +182,7 @@ cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Debug ../llvm
 
 最后一个参数是 build 相对你的 llvm 工程文件的相对路径。
 
-`-G` 后边的那个配置是指定 cmake 生成哪种编译配置文件，比如 `"Unix Makfile"` 就是 make 使用的，还可以指定 `Ninja` 或 `Xcode`，它会对应生成 ninja 的编译文件或 xcode 的编译文件。我喜欢用 ninja，编译输出更清晰，但后两个需要你有环境，比如自己安装 ninja 软件或 xcode，而 make 在 Linux 机器和 Mac 机器上是自带的。下文中涉及到编译时，我会使用 ninja，当然这些都不重要。
+`-G` 后边的那个配置是指定 cmake 生成哪种编译配置文件，比如 `"Unix Makefiles"` 就是 make 使用的，还可以指定 `Ninja` 或 `Xcode`，它会对应生成 ninja 的编译文件或 xcode 的编译文件。我喜欢用 ninja，编译输出更清晰，但后两个需要你有环境，比如自己安装 ninja 软件或 xcode，而 make 在 Linux 机器和 Mac 机器上是自带的。下文中涉及到编译时，我会使用 ninja，当然这些都不重要。
 
 cmake 还可以指定其他参数，比如：`-DLLVM_TARGETS_TO_BUILD=Cpu0`，这个表示只编译 Cpu0 后端，这样编译会快一些，毕竟 LLVM 的后端太多了，都编译没必要（不过我们还没实现 Cpu0 的后端，如果你不希望编译时炸出一堆错误，目前还是不要加这个参数了）。之后可以编译 Cpu0 后端之后，选择仅编译 Cpu0 和 Mips 这两个后端，参数是：`-DLLVM_TARGETS_TO_BUILD="Cpu0;Mips"`。
 
@@ -234,7 +234,7 @@ cmake 时可能会出问题，导致失败，只要你最后没看到 configurin
 
 然后，创建一个子目录 `lib/Target/Cpu0/TargetInfo/`，在这个路径下新建 `Cpu0TargetInfo.cpp`，这个文件中，我们调用了 `RegisterTarget` 接口来注册我们的目标，需要做两次注册，分别完成 cpu0 和 cpu0el 的注册。
 
-还需要创建一个子目录 `lib/Target/Cpu0MCTargetDesc.cpp` 文件和其对应的头文件，这里写了一个 `LLVMInitializeCpu0TargetMC()` 的函数，也暂时留空。
+还需要创建一个子目录 `lib/Target/Cpu0/MCTargetDesc/`，在这个路径下新建 `MCTargetDesc.cpp` 文件和其对应的头文件，这里写了一个 `LLVMInitializeCpu0TargetMC()` 的函数，也暂时留空。
 
 放这两个额外的子目录，在其他后端中也同样这么做，究其原因，是每个后端都会提供多个库，我们的 Cpu0/ 路径下会生成一个叫 libLLVMCpu0CodeGen.a 的库，而这两个子目录会生成 libLLVMCpu0Desc.a 和 libLLVMCpu0Info.a 这两个库，关于库的生成控制是在 CMakeLists.txt 中完成的。
 
@@ -254,7 +254,7 @@ cmake 时可能会出问题，导致失败，只要你最后没看到 configurin
 
 #### 3. 构建文件
 
-我们需要编写一些 cmake 文件 和 LLVMBuild 文件，前者是 cmake 执行时需要查找的，后者是 LLVM 构建时辅助的描述文件。每个路径下都需要有这两个文件，所以我们需要在 `lib/Target/Cpu0/`，`lib/Target/Cpu0/TargetInfo/`，和 `lib/Target/Cpu0/MCTargetDesc/` 路径下都扔一个 `CMakeLists.txt` 文件和一个 `LLVMBuild.txt` 文件。
+我们需要编写一些 cmake 文件 和 LLVMBuild 文件，前者是 cmake 执行时需要查找的，后者是 LLVM 构建时辅助的描述文件。每个路径下都需要有这两个文件，所以我们需要在 `lib/Target/Cpu0/`，`lib/Target/Cpu0/TargetInfo/`，和 `lib/Target/Cpu0/MCTargetDesc/` 路径下都扔一个 `CMakeLists.txt` 文件和一个 `LLVMBuild.txt` 文件，还需要修改 `lib/Target/CMakeLists.txt` 和 `LLVMBuild.txt`。
 
 有关于 LLVMBuild.txt 的参考资料可以见这篇文章：[http://llvm.org/docs/LLVMBuild.html](http://llvm.org/docs/LLVMBuild.html)
 
