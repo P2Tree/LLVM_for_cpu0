@@ -6,4 +6,10 @@
 * [第 2 章 后端结构](tutorial/llvm-hou-duan-shi-jian-bi-ji-2.md)
 * [第 3 章 算术和逻辑指令](tutorial/llvm-hou-duan-shi-jian-bi-ji-3.md)
 * [第 4 章 生成目标文件](tutorial/llvm-hou-duan-shi-jian-bi-ji-4.md)
-
+* [第 5 章 全局变量](tutorial/llvm-hou-duan-shi-jian-bi-ji-5.md)
+* [第 6 章 更多数据类型](tutorial/llvm-hou-duan-shi-jian-bi-ji-6.md)
+* [第 7 章 控制流](tutorial/llvm-hou-duan-shi-jian-bi-ji-7.md)
+* [第 8 章 函数调用](tutorial/llvm-hou-duan-shi-jian-bi-ji-8.md)
+* [第 9 章 ELF 文件支持](tutorial/llvm-hou-duan-shi-jian-bi-ji-9.md)
+* [第 10 章 汇编](tutorial/llvm-hou-duan-shi-jian-bi-ji-10.md)
+* [附录 A 使用 Simulator 验证编译器](tutorial/llvm-hou-duan-shi-jian-bi-ji-A.md)
